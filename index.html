@@ -11,12 +11,16 @@
   body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;padding:12px;min-height:100vh;}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;max-width:520px;margin:0 auto;}
   .title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;}
+  .tab{flex:1;padding:5px 0;border-radius:7px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;}
+  .tab.active{background:var(--accent);border-color:var(--accent);color:#0f172a;}
+  .tab:not(.active):hover{border-color:var(--accent);color:var(--accent);}
   .current-price{display:flex;align-items:baseline;gap:6px;margin-bottom:3px;}
   .price-value{font-size:30px;font-weight:700;line-height:1;}
   .price-unit{font-size:13px;color:var(--muted);}
   .level-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-left:4px;}
   .badge-low{background:rgba(34,197,94,.15);color:#4ade80;}
-  .badge-mid{background:rgba(245,158,11,.15);color:#fbbf24;}
+  .badge-medium,.badge-mid{background:rgba(245,158,11,.15);color:#fbbf24;}
   .badge-high{background:rgba(239,68,68,.15);color:#f87171;}
   .sub-info{font-size:11px;color:var(--accent);margin-bottom:10px;}
   .chart-wrap{position:relative;height:155px;margin-bottom:10px;}
@@ -28,92 +32,147 @@
   .footer-text{font-size:10px;color:var(--faint);}
   .refresh-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;}
   .refresh-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .no-tomorrow{text-align:center;padding:40px 10px;color:var(--muted);font-size:12px;}
 </style>
 </head>
 <body>
 <div class="card">
   <div class="title">⚡ OTE Spot — 15 min intervaly</div>
-  <div class="current-price">
-    <span class="price-value" id="curPrice">—</span>
-    <span class="price-unit">Kč/kWh</span>
-    <span class="level-badge" id="levelBadge">—</span>
+
+  <div class="tabs">
+    <button class="tab active" id="tabToday" onclick="switchTab('today')">Dnes</button>
+    <button class="tab" id="tabTomorrow" onclick="switchTab('tomorrow')">Zajtra</button>
   </div>
-  <div class="sub-info" id="curTime">Načítám...</div>
+
+  <div id="todayView">
+    <div class="current-price">
+      <span class="price-value" id="curPrice">—</span>
+      <span class="price-unit">Kč/kWh</span>
+      <span class="level-badge" id="levelBadge">—</span>
+    </div>
+    <div class="sub-info" id="curTime">Načítám...</div>
+  </div>
+  <div id="tomorrowView" style="display:none">
+    <div class="current-price">
+      <span class="price-value" id="tmrAvgPrice">—</span>
+      <span class="price-unit">Kč/kWh</span>
+      <span style="font-size:11px;color:var(--muted);margin-left:6px;">priemer</span>
+    </div>
+    <div class="sub-info" id="tmrInfo">—</div>
+  </div>
+
   <div class="chart-wrap"><canvas id="spotChart"></canvas></div>
+
   <div class="stats-row">
-    <div class="stat"><div class="stat-label">Min dnes</div><div class="stat-value" id="statMin" style="color:var(--low)">—</div></div>
+    <div class="stat"><div class="stat-label">Min</div><div class="stat-value" id="statMin" style="color:var(--low)">—</div></div>
     <div class="stat"><div class="stat-label">Průměr</div><div class="stat-value" id="statAvg" style="color:var(--accent)">—</div></div>
-    <div class="stat"><div class="stat-label">Max dnes</div><div class="stat-value" id="statMax" style="color:var(--high)">—</div></div>
+    <div class="stat"><div class="stat-label">Max</div><div class="stat-value" id="statMax" style="color:var(--high)">—</div></div>
   </div>
+
   <div class="footer">
     <span class="footer-text" id="lastUpdate">Zdroj: spotovaelektrina.cz / OTE-CR</span>
     <button class="refresh-btn" onclick="loadData()">↻ Obnoviť</button>
   </div>
 </div>
+
 <script>
 let chart=null;
-function toKwh(mwh){ return mwh/1000; }
-function fmt(v){ return v.toFixed(2).replace(".",","); }
-function lbl(l){return l==="low"?"Nízká":l==="mid"?"Střední":"Vysoká";}
-function cls(l){return l==="low"?"badge-low":l==="mid"?"badge-mid":"badge-high";}
+let allData={today:[],tomorrow:[]};
+let activeTab='today';
+
+function toKwh(mwh){return mwh/1000;}
+function fmt(v){return v.toFixed(2).replace(".",",");}
+function lbl(l){return l==="low"?"Nízká":l==="medium"||l==="mid"?"Střední":"Vysoká";}
+function cls(l){return l==="low"?"badge-low":l==="medium"||l==="mid"?"badge-medium":"badge-high";}
+function bgCol(l){return l==="low"?"rgba(34,197,94,.75)":l==="medium"||l==="mid"?"rgba(245,158,11,.75)":"rgba(239,68,68,.75)";}
+
+function switchTab(tab){
+  activeTab=tab;
+  document.getElementById('tabToday').className='tab'+(tab==='today'?' active':'');
+  document.getElementById('tabTomorrow').className='tab'+(tab==='tomorrow'?' active':'');
+  document.getElementById('todayView').style.display=tab==='today'?'block':'none';
+  document.getElementById('tomorrowView').style.display=tab==='tomorrow'?'block':'none';
+  renderChart();
+}
+
+function renderChart(){
+  const items = activeTab==='today' ? allData.today : allData.tomorrow;
+  if(!items||!items.length){
+    if(chart){chart.destroy();chart=null;}
+    return;
+  }
+
+  const now=new Date(),ch=now.getHours(),cm=Math.floor(now.getMinutes()/15)*15;
+  const prices=items.map(i=>toKwh(i.priceCZK));
+  const minV=Math.min(...prices),maxV=Math.max(...prices),avgV=prices.reduce((a,b)=>a+b,0)/prices.length;
+
+  document.getElementById("statMin").textContent=fmt(minV)+" Kč";
+  document.getElementById("statMax").textContent=fmt(maxV)+" Kč";
+  document.getElementById("statAvg").textContent=fmt(avgV)+" Kč";
+
+  if(activeTab==='tomorrow'){
+    document.getElementById('tmrAvgPrice').textContent=fmt(avgV);
+    document.getElementById('tmrInfo').textContent=
+      "Min: "+fmt(minV)+" Kč/kWh · Max: "+fmt(maxV)+" Kč/kWh";
+  }
+
+  const labels=items.map(i=>String(i.hour).padStart(2,"0")+":"+String(i.minute).padStart(2,"0"));
+  const bgColors=items.map(i=>bgCol(i.level));
+  const curIdx=activeTab==='today'?items.findIndex(i=>i.hour===ch&&i.minute===cm):-1;
+
+  if(chart)chart.destroy();
+  chart=new Chart(document.getElementById("spotChart").getContext("2d"),{
+    type:"bar",
+    data:{labels,datasets:[{data:prices,backgroundColor:bgColors,
+      borderColor:bgColors.map((_,i)=>i===curIdx?"#fff":"transparent"),
+      borderWidth:bgColors.map((_,i)=>i===curIdx?2:0),
+      borderRadius:2,barPercentage:.95,categoryPercentage:1.0}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:400},
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        title:(t)=>t[0].label,
+        label:(t)=>{
+          const d=items[t.dataIndex];
+          return[fmt(t.raw)+" Kč/kWh",fmt(toKwh(d.priceEur))+" EUR/kWh",d.priceCZK.toLocaleString("cs-CZ")+" Kč/MWh","Pásmo: "+lbl(d.level)];
+        }
+      },backgroundColor:"#1f2937",titleColor:"#f9fafb",bodyColor:"#9ca3af",borderColor:"#374151",borderWidth:1}},
+      scales:{
+        x:{ticks:{color:"#6b7280",font:{size:9},maxTicksLimit:12,maxRotation:0},grid:{display:false},border:{display:false}},
+        y:{ticks:{color:"#6b7280",font:{size:10},callback:(v)=>fmt(v)+" Kč"},grid:{color:"rgba(255,255,255,.05)"},border:{display:false}}
+      }
+    }
+  });
+}
 
 async function loadData(){
   try{
     const res=await fetch("https://spotovaelektrina.cz/api/v1/price/get-prices-json-qh");
     const data=await res.json();
-    const items=data.hoursToday||[];
-    if(!items.length){document.getElementById("curTime").textContent="Data dnes nejsou dostupná";return;}
+    allData.today=data.hoursToday||[];
+    allData.tomorrow=data.hoursTomorrow||[];
 
+    if(!allData.today.length){document.getElementById("curTime").textContent="Data dnes nejsou dostupná";return;}
+
+    // Update today header
     const now=new Date(),ch=now.getHours(),cm=Math.floor(now.getMinutes()/15)*15;
-    const cur=items.find(i=>i.hour===ch&&i.minute===cm)||items[items.length-1];
-
+    const cur=allData.today.find(i=>i.hour===ch&&i.minute===cm)||allData.today[allData.today.length-1];
     document.getElementById("curPrice").textContent=fmt(toKwh(cur.priceCZK));
     const badge=document.getElementById("levelBadge");
     badge.textContent=lbl(cur.level);badge.className="level-badge "+cls(cur.level);
     document.getElementById("curTime").textContent=
       String(ch).padStart(2,"0")+":"+String(cm).padStart(2,"0")+
-      " · "+fmt(toKwh(cur.priceEur))+" EUR/kWh  ("+cur.priceCZK.toLocaleString("cs-CZ")+" Kč/MWh)";
+      " · "+fmt(toKwh(cur.priceEur))+" EUR/kWh";
 
-    const prices=items.map(i=>toKwh(i.priceCZK));
-    const minV=Math.min(...prices),maxV=Math.max(...prices),avgV=prices.reduce((a,b)=>a+b,0)/prices.length;
+    // Tomorrow tab label
+    if(!allData.tomorrow.length){
+      document.getElementById('tabTomorrow').textContent='Zajtra (N/A)';
+    } else {
+      document.getElementById('tabTomorrow').textContent='Zajtra ✓';
+    }
 
-    document.getElementById("statMin").textContent=fmt(minV)+" Kč";
-    document.getElementById("statMax").textContent=fmt(maxV)+" Kč";
-    document.getElementById("statAvg").textContent=fmt(avgV)+" Kč";
-
-    const labels=items.map(i=>String(i.hour).padStart(2,"0")+":"+String(i.minute).padStart(2,"0"));
-    const bgColors=items.map(i=>i.level==="low"?"rgba(34,197,94,.75)":i.level==="mid"?"rgba(245,158,11,.75)":"rgba(239,68,68,.75)");
-    const curIdx=items.findIndex(i=>i.hour===ch&&i.minute===cm);
-
-    if(chart)chart.destroy();
-    chart=new Chart(document.getElementById("spotChart").getContext("2d"),{
-      type:"bar",
-      data:{labels,datasets:[{data:prices,backgroundColor:bgColors,
-        borderColor:bgColors.map((_,i)=>i===curIdx?"#fff":"transparent"),
-        borderWidth:bgColors.map((_,i)=>i===curIdx?2:0),
-        borderRadius:2,barPercentage:.95,categoryPercentage:1.0}]},
-      options:{responsive:true,maintainAspectRatio:false,animation:{duration:400},
-        plugins:{legend:{display:false},tooltip:{callbacks:{
-          title:(t)=>t[0].label,
-          label:(t)=>{
-            const d=items[t.dataIndex];
-            return[
-              fmt(t.raw)+" Kč/kWh",
-              fmt(toKwh(d.priceEur))+" EUR/kWh",
-              d.priceCZK.toLocaleString("cs-CZ")+" Kč/MWh",
-              "Pásmo: "+lbl(d.level)
-            ];
-          }
-        },backgroundColor:"#1f2937",titleColor:"#f9fafb",bodyColor:"#9ca3af",borderColor:"#374151",borderWidth:1}},
-        scales:{
-          x:{ticks:{color:"#6b7280",font:{size:9},maxTicksLimit:12,maxRotation:0},grid:{display:false},border:{display:false}},
-          y:{ticks:{color:"#6b7280",font:{size:10},callback:(v)=>fmt(v)+" Kč"},grid:{color:"rgba(255,255,255,.05)"},border:{display:false}}
-        }
-      }
-    });
+    renderChart();
     document.getElementById("lastUpdate").textContent=
       "Obnoveno: "+now.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit",second:"2-digit"})+" · OTE-CR · 15 min";
-  }catch(e){document.getElementById("curTime").textContent="Chyba při načítání dat: "+e.message;}
+  }catch(e){document.getElementById("curTime").textContent="Chyba: "+e.message;}
 }
 loadData();
 setInterval(loadData,5*60*1000);
